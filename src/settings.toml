@@ -1,0 +1,10 @@
+CONNECTION_METHOD	= "wifi"
+ONSTEPX_WIFI_SSID	= "ONSTEP"
+ONSTEPX_WIFI_PASSWORD	= "password"
+ONSTEPX_IP_ADDR		= "192.168.0.1"
+ONSTEPX_PORT		= 9996
+
+# Can be white, red, green, blue, yellow, cyan or magenta
+DISPLAY_COLOR		= "red"
+
+INFO_TEXT		= "SkyPilot - Wilson Coulee"
