@@ -40,7 +40,21 @@ class Display():
                 self.systemDisplay.root_group = group
 
 
-	def display_menu(self):
+	def display_menu(self, lines):
                 group = Group()
-                group.append(self.__makeTextArea('Menu', self.text_color, 0, self.LINES_Y[0]))
+		line_index = 0
+		for line in lines:
+			if line_index >= 4:
+				return
+                	group.append(self.__makeTextArea(line, self.text_color, 0, self.LINES_Y[line_index]))
+			line_index += 1
+                self.systemDisplay.root_group = group
+
+
+	def display_position(self, ra, dec, az, alt):
+                group = Group()
+                group.append(self.__makeTextArea('RA:  %s' % ra,  self.text_color, 0, self.LINES_Y[0]))
+                group.append(self.__makeTextArea('DEC: %s' % dec, self.text_color, 0, self.LINES_Y[1]))
+                group.append(self.__makeTextArea('AZ:  %s' % az,  self.text_color, 0, self.LINES_Y[2]))
+                group.append(self.__makeTextArea('ALT: %s' % alt, self.text_color, 0, self.LINES_Y[3]))
                 self.systemDisplay.root_group = group

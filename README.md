@@ -17,6 +17,21 @@ Although PiHC code is a complete write from scratch, it contains catalogs and al
 
 ## Building The Hardware
 
+| Item | GPIO |
+| ---- | ---- |
+| F1 | GPIO5 |
+| F2 | GPIO6 |
+| N | GPIO9 |
+| S | GPIO10 |
+| E |  GPIO11 |
+| W | GPIO12 |
+| Center |  GPIO8 (A5) |
+| Power Switch | EN |
+| Power Switch | GND |
+
+Connect the other side of every button switch to GND
+
+
 ## 3D Printed Case
 
 ## Installing

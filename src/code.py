@@ -2,6 +2,8 @@ import os
 import time
 from display import Display
 from connectionManager import ConnectionManager
+from buttons import Buttons
+from menus import Menus
 
 
 
@@ -13,18 +15,6 @@ def read_version():
 		return version
 	return None
 
-
-def send_command(cmd):
-	(success, rx) = connection_manager.send_command(cmd)
-	if success:
-		print('✅  %s ' % cmd, end='')
-		if rx is not None:
-			print('-> %s' % rx)
-		else:
-			print()
-	else:
-		print('❌  %s failed' % cmd)
-	
 
 
 #
@@ -46,30 +36,32 @@ info_text		= os.getenv("INFO_TEXT")
 # Start the display
 display = Display(version, display_color, info_text)
 
-connection_manager = ConnectionManager(connection_method, onstepx_wifi_ssid, onstepx_wifi_password, onstepx_ip_addr, onstepx_port, debug=False)
+buttons			= Buttons()
+connection_manager	= ConnectionManager(connection_method, onstepx_wifi_ssid, onstepx_wifi_password, onstepx_ip_addr, onstepx_port, debug=False)
+menus			= Menus(connection_manager, version, info_text)
 
 connection_manager.connect()
 
 while True:
 	if connection_manager.connected():
-		display.display_menu()
+		"""
+		ra = send_command('GR', reply_expected = True)
+		dec = send_command('GD', reply_expected = True)
+		az = send_command('GZ', reply_expected = True)
+		alt = send_command('GA', reply_expected = True)
+		display.display_position(ra, dec, az, alt)
+		"""
 
-		send_command('SC01/14/25')
-		send_command('SL05:34:00')
-		send_command('hR')
+		# Read Buttons
+		(buttonsPressed, buttonsReleased, buttonsHeld) = buttons.process()
+		menus.process_buttons(buttonsPressed, buttonsReleased, buttonsHeld)
 
-		send_command('GR')
-		send_command('GD')
-		send_command('GZ')
-		send_command('GA')
-		send_command('Sr05:40:20')
-		send_command('Sd+80:20:20')
-		send_command('GU')
+		if menus.needs_redisplay():
+			lines = menus.get_menu_display()
+			display.display_menu(lines)
 	else:
  		display.display_connecting(connection_method, onstepx_wifi_ssid)
 		connection_manager.connect()
-
-	# Read Buttons
 
 	# Read OnStepX Controller
 
@@ -77,4 +69,4 @@ while True:
 	
 	# Update Display
 
-	time.sleep(1.0)
+	#time.sleep(0.1)

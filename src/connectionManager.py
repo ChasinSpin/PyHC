@@ -82,6 +82,7 @@ class ConnectionManager():
 			print('Connecting...')
 			self.socket.connect((self.ip_addr, self.port))
 			print('Socket connected')
+			time.sleep(2)
 		except BaseException as e:
 			print('failed to create socket: %s' % e)
 			if self.socket is not None:
@@ -100,7 +101,7 @@ class ConnectionManager():
 			self.connect_st4()
 
 
-	def send_command(self, cmd, reply_expected = True):
+	def send_command_sub(self, cmd, reply_expected = True):
 		"""
 			All mount operations start with a send command and receive a reply. Commands should not include the starting : or ending #
 			Some commands don't expect a reply, in which case set reply_expected to False
@@ -164,6 +165,8 @@ class ConnectionManager():
 		if rxBuf is None:
 			if reply_expected:
 				raise ValueError('send_command: expected a response but didn\'t get one')
+			else:
+				return (True, None)
 		else:
 			if rxBuf == '0':
 				return (False, None)
@@ -176,3 +179,16 @@ class ConnectionManager():
 
 		# Shouldn't reach here
 		return None
+
+
+	def send_command(self, cmd, reply_expected = True):
+		(success, rx) = self.send_command_sub(cmd, reply_expected)
+		if success:
+			print('✅  %s ' % cmd, end='')
+			if rx is not None:
+				print('-> %s' % rx)
+			else:
+				print()
+		else:
+			print('❌  %s failed' % cmd)
+		return rx
