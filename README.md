@@ -26,11 +26,12 @@ Although PiHC code is a complete write from scratch, it contains catalogs and al
 | E |  GPIO11 |
 | W | GPIO12 |
 | Center |  GPIO8 (A5) |
-| Power Switch | EN |
+| Power Switch | EN(if powered by LiPo), USB(if powered by 5V regulator) |
 | Power Switch | GND |
 
 Connect the other side of every button switch to GND
 
+If 3 x AA powered, connect Schottky Diode CUS08F30H3FCT in 4.5V from battery (for reverse polarity protection), and use https://www.amazon.ca/dp/B09Z2CVQYQ 5V Buck Boost Power Module to convert battery to 5V.
 
 ## 3D Printed Case
 

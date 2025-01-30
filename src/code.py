@@ -44,14 +44,6 @@ connection_manager.connect()
 
 while True:
 	if connection_manager.connected():
-		"""
-		ra = send_command('GR', reply_expected = True)
-		dec = send_command('GD', reply_expected = True)
-		az = send_command('GZ', reply_expected = True)
-		alt = send_command('GA', reply_expected = True)
-		display.display_position(ra, dec, az, alt)
-		"""
-
 		# Read Buttons
 		(buttonsPressed, buttonsReleased, buttonsHeld) = buttons.process()
 		menus.process_buttons(buttonsPressed, buttonsReleased, buttonsHeld)
@@ -62,11 +54,3 @@ while True:
 	else:
  		display.display_connecting(connection_method, onstepx_wifi_ssid)
 		connection_manager.connect()
-
-	# Read OnStepX Controller
-
-	# Write OnStepX Controller
-	
-	# Update Display
-
-	#time.sleep(0.1)

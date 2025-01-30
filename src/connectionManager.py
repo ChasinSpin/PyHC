@@ -143,8 +143,8 @@ class ConnectionManager():
 				rxBuf = bytearray(self.MAX_RX_SIZE)
 				try:
 					rxBytes = self.socket.recv_into(rxBuf)
-				except:
-					print('Error: Network or socket not connected')
+				except BaseException as e:
+					print('Error: Network or socket not connected %s' % e)
 					if self.socket is not None:
 						self.socket.close()
 					self.socket = None

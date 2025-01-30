@@ -144,9 +144,10 @@ class menuItemSubmenu():
 
 class menuItemAction():
 
-	def __init__(self, name, operation):
+	def __init__(self, name, operation, arg = None):
 		self.name = name
 		self.operation = operation
+		self.arg = arg
 
 
 class menuItemView():
@@ -169,12 +170,17 @@ class menu():
 
 class Menus():
 
-	MODE_DATETIME_REQUIRED		= 0
-	MODE_UNPARK_NEEDED		= 1
-	MODE_HOME_NEEDED		= 2
-	MODE_MENU			= 3
-	MODE_JOYSTICK			= 4
-	MODE_VIEW			= 5
+	MODE_DISPLAY_OPERATION		= 0	# Displays an operation; PARKED, PARK_INPROGRESS, GOTO_INPROGRESS, ERROR
+	MODE_MENU			= 1	# Displays the menu
+	MODE_JOYSTICK			= 2	# Displays the joystick
+	MODE_VIEW			= 3	# Displays a view after an action
+
+	DISPLAY_OP_NONE			= 0
+	DISPLAY_OP_PARKED		= 1
+	DISPLAY_OP_PARK_INPROGRESS	= 2
+	DISPLAY_OP_GOTO_INPROGRESS	= 3
+	DISPLAY_OP_3STARALIGN		= 4
+	DISPLAY_OP_ERROR		= 5
 
 	STATUS_TIMEOUT			= 1.0
 	JOYSTICK_RETRANSMIT_TIMEOUT	= 5.0
@@ -182,7 +188,8 @@ class Menus():
 
 
 	def __init__(self, connection_manager, pyhc_version, info):
-		self.mode		= self.MODE_DATETIME_REQUIRED
+		self.mode		= self.MODE_MENU
+		self.display_op		= self.DISPLAY_OP_NONE
 		self.menu_updated	= False
 		self.joystick_mode	= False
 		self.guide_rate		= 9
@@ -193,26 +200,46 @@ class Menus():
 		self.menu_parking = [
 			menuItemAction('PARK', self.action_park),
 			menuItemAction('UNPARK', self.action_unpark),
-			menuItemAction('SETPARK (be careful)', self.action_setpark),
 		]
 
-		self.menu_home = [
-			menuItemAction('MOVE HOME', self.action_movehome),
-			menuItemAction('SET HOME', self.action_sethome),
-		]
+		#self.menu_home = [
+		#	menuItemAction('MOVE HOME', self.action_movehome),
+		#	menuItemAction('SET HOME', self.action_sethome),
+		#]
 
 		self.menu_tracking = [
 			menuItemAction('TRACKING ON', self.action_trackingon),
 			menuItemAction('TRACKING OFF', self.action_trackingoff),
 		]
 
+		self.menu_trackingrate = [
+			menuItemAction('SIDEREAL', self.action_trackingrate, 'sidereal'),
+			menuItemAction('LUNAR', self.action_trackingrate, 'lunar'),
+			menuItemAction('KING', self.action_trackingrate, 'king'),
+			menuItemAction('SOLAR', self.action_trackingrate, 'solar'),
+		]
+
+		self.menu_maxslewrate = [
+			menuItemAction('NORMAL (4 deg/s)', self.action_maxslewrate, 'normal'),
+			menuItemAction('COLD WEATHER (2.7 deg/s)', self.action_maxslewrate, 'coldweather'),
+			menuItemAction('SNAIL PACE (2.0 deg/s)', self.action_maxslewrate, 'snailpace'),
+			menuItemAction('INSANE (6.0 deg/s)', self.action_maxslewrate, 'insane'),
+		]
+
+		self.menu_admin = [
+			menuItemAction('SETPARK (do not use)', self.action_setpark),
+		]
+
 		self.main_menu = [
 			menuItemSubmenu('PARKING', self.menu_parking),
-			menuItemSubmenu('HOME', self.menu_home),
 			menuItemAction('SYNC', self.action_sync),
 			menuItemView('POSITION', self.view_position),
-			menuItemSubmenu('TRACKING', self.menu_tracking),
+			menuItemSubmenu('TRACKING ON/OFF', self.menu_tracking),
+			menuItemSubmenu('TRACKING RATE', self.menu_trackingrate),
+			menuItemSubmenu('MAX SLEW RATE', self.menu_maxslewrate),
+			menuItemAction('3 STAR ALIGN', self.action_3staralign),
 			menuItemAction('ABOUT', self.action_about),
+			menuItemSubmenu('ADMIN ONLY', self.menu_admin),
 		]
 
 		self.menu_stack			= []
@@ -220,6 +247,7 @@ class Menus():
 
 		self.last_get_status		= time.monotonic()
 		self.last_status = {}
+		self.last_3staralign_time	= time.monotonic()
 
 
 
@@ -399,14 +427,46 @@ class Menus():
 			str += 'N'
 
 		str += ' err:'
-		str += self.status['error']
+		#str += self.status['error']
 
 		return str
 
 
+	def __check_display_op(self):
+		if self.menu_updated:
+			#if 'error' in self.last_status.keys():
+			#	# Error is always checked for first
+			#	self.mode	= self.MODE_DISPLAY_OPERATION
+			#	self.display_op	= self.DISPLAY_OP_ERROR
+			#	print('ERROR')
+			#	print(self.last_status['error'])
+			if self.last_status['parked'] == 'yes':
+				self.mode	= self.MODE_DISPLAY_OPERATION
+				self.display_op	= self.DISPLAY_OP_PARKED
+			elif self.last_status['parked'] == 'inprogress':
+				self.mode	= self.MODE_DISPLAY_OPERATION
+				self.display_op	= self.DISPLAY_OP_PARK_INPROGRESS
+			elif self.display_op != self.DISPLAY_OP_3STARALIGN and self.last_status['goto'] == 'yes':
+				self.mode	= self.MODE_DISPLAY_OPERATION
+				self.display_op	= self.DISPLAY_OP_GOTO_INPROGRESS
+			elif self.display_op == self.DISPLAY_OP_3STARALIGN:
+				pass
+			else:
+				self.mode = self.MODE_MENU
+				self.display_op = self.DISPLAY_OP_NONE
+
+		if self.mode == self.MODE_DISPLAY_OPERATION and self.display_op == self.DISPLAY_OP_3STARALIGN:
+			now = time.monotonic()
+			if (now - self.last_3staralign_time) >= 1:
+				self.last_3staralign_time = now
+				self.menu_updated = True
+        
+
 	def needs_redisplay(self):
 		""" Returns true if the menu has been updated and needs display """
 		self.__get_status()
+		self.__check_display_op()
+
 		return self.menu_updated
 
 
@@ -416,8 +476,31 @@ class Menus():
 
 		lines = []
 
+		if self.mode == self.MODE_DISPLAY_OPERATION and self.display_op == self.DISPLAY_OP_3STARALIGN:
+                	rx = self.conman.send_command('A?', reply_expected = True)
+			starNum = rx[1]
+			if starNum == '4':
+                		self.conman.send_command('AW', reply_expected = True)
+				self.mode = self.MODE_MENU
+				self.display_op = self.DISPLAY_OP_NONE
+			else:
+				lines = ['Align Star %s' % starNum, 'Select star in SkySafari', 'away from NCP and', 'goto and Align']
+
+		print('Mode:', self.mode)
+		print('Display Op:', self.display_op)
 		if self.mode == self.MODE_VIEW or self.mode == self.MODE_JOYSTICK:
 			lines = self.view_msg
+		elif self.mode == self.MODE_DISPLAY_OPERATION:
+			if   self.display_op == self.DISPLAY_OP_PARKED:
+				lines = ['MOUNT IS PARKED!', '', 'Press W button', 'to unpark']
+			elif self.display_op == self.DISPLAY_OP_PARK_INPROGRESS:
+				lines = ['MOVING MOUNT TO PARK POSITION!', '', 'Press ANY button', 'to STOP']
+			elif self.display_op == self.DISPLAY_OP_GOTO_INPROGRESS:
+				lines = ['MOVING MOUNT TO TARGET POSITION!', '', 'Press ANY button', 'to STOP']
+			elif self.display_op == self.DISPLAY_OP_ERROR:
+				lines = ['ERROR']
+			#elif self.display_op == self.DISPLAY_OP_NONE:
+			#	self.mode = self.MODE_MENU
 		else:
 			lines.append(self.__get_status_shortform())
 
@@ -503,8 +586,17 @@ class Menus():
 			if len(buttonsPressed) == 0:
 				return
 
+			if self.display_op == self.DISPLAY_OP_PARK_INPROGRESS or self.display_op == self.DISPLAY_OP_GOTO_INPROGRESS:
+                		self.conman.send_command('Q', reply_expected = False)	# Stop motion
+				
 			if self.mode == self.MODE_VIEW:
 				self.mode = self.MODE_MENU
+			if self.mode == self.MODE_DISPLAY_OPERATION:
+				if   self.display_op == self.DISPLAY_OP_PARKED:
+					if 'W' in buttonsPressed:
+						self.action_unpark()
+				elif   self.display_op == self.DISPLAY_OP_NONE:
+					self.mode = self.MODE_MENU
 			else:
 				if 'S' in buttonsPressed:
 					self.current_menu.selected_index += 1
@@ -537,7 +629,10 @@ class Menus():
 						self.menu_stack.append(self.current_menu)
 						self.current_menu = menu(selected.submenu)
 					if isinstance(selected, menuItemAction):
-						selected.operation()
+						if selected.arg is not None:
+							selected.operation(selected.arg)
+						else:
+							selected.operation()
 					if isinstance(selected, menuItemView):
 						pass
 
@@ -563,7 +658,9 @@ class Menus():
 
 	def action_unpark(self):
 		self.conman.send_command('hR', reply_expected = True)
-		self.set_view(['Mount is now UNPARKED!'])
+		self.conman.send_command('RG', reply_expected = False)
+		self.conman.send_command('R9', reply_expected = False)
+		self.set_view(['Mount is now UNPARKED', 'and Rates Set To Fast!'])
 		print('UNPARKED')
 
 
@@ -607,6 +704,46 @@ class Menus():
 		onstepx_ver = self.conman.send_command('GVN', reply_expected = True)
 		self.set_view( ['PiHC Version: %s' % self.pyhc_version, 'OnStepX Version: %s' % onstepx_ver, 'Info: %s' % self.info, 'Author: @ChasinSpin'] )
 		print('ABOUT')
+
+
+	def action_maxslewrate(self, arg):
+		if arg == 'coldweather':
+			speed = 4
+		elif arg == 'snailpace':
+			speed = 5
+		elif arg == 'insane':
+			speed = 2
+		else:
+			speed = 3
+
+		self.conman.send_command('SX93,%d' % speed, reply_expected = False)
+		self.set_view(['Max slew speed set'])
+
+
+	def action_trackingrate(self, arg):
+		if arg == 'sidereal':
+			self.conman.send_command('TQ', reply_expected = False)
+		elif arg == 'solar':
+			self.conman.send_command('TS', reply_expected = False)
+		elif arg == 'lunar':
+			self.conman.send_command('TL', reply_expected = False)
+		elif arg == 'king':
+			self.conman.send_command('TK', reply_expected = False)
+		self.set_view(['Tracking rate set'])
+
+
+	def action_3staralign(self):
+		self.mode = self.MODE_DISPLAY_OPERATION
+		self.display_op = self.DISPLAY_OP_3STARALIGN
+		self.conman.send_command('A3', reply_expected = True)
+
+	
+	def view_position(self)
+		ra = send_command('GR', reply_expected = True)
+		dec = send_command('GD', reply_expected = True)
+		az = send_command('GZ', reply_expected = True)
+		alt = send_command('GA', reply_expected = True)
+		display.display_position(ra, dec, az, alt)
 
 
 	def view_position(self):
