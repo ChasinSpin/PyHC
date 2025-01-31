@@ -5,33 +5,13 @@ For common targets we really hit the most common Messiers objects and planets an
 Top 10 would be: 3,11,13,16,27,42,53,57,81,92
 
 
-If mode == MODE_DATETIME_REQUIRED:
-	display prompt "Enter date time"
-elif mode == MODE_UNPARK_NEEDED:
-	display prompt "Press ENTER to unpark"
-elif mode == MODE_HOME_NEEDED:
-	display prompt "Slew to DEC 90 with forks East/West and press ENTER when ready"
-else:
-	Display normal menus
-
-
-menuItemSubmenu(name, submenu)
-menuItemAction(name, op)
-menuItemView(name, value)
-
 	self.menu = [
 			menuItemSubmenu('OBJECT LIBRARY', self.menu_objectlibrary)
 			menuItemSubmenu('TARGET', self.menu_target)
-			menuItemSubmenu('SYNC TARGET', self.menu_synctarget)
-			menuItemSubmenu('PARK', self.menu_park)
-			menuItemSubmenu('HOME', self.menu_home)
 			menuItemSubmenu('SPIRAL SEARCH', self.menu_spiralsearch)
-			menuItemSubmenu('TRACKING', self.menu_tracking)
-			menuItemSubmenu('ALIGN', self.menu_align)
 			menuItemSubmenu('POSITION', self.menu_position)
 			menuItemSubmenu('DATE/TIME', self.menu_datetime)
 			menuItemSubmenu('MAP LIGHT', self.menu_maplight)
-			menuItemSubmenu('ABOUT', self.menu_about)
 		    ]
 
 	self.menu_objectlibrary =  [
@@ -57,30 +37,8 @@ TARGET
 	SET NEW TARGET
 		ENTER RA/DEC
 
-SYNC TARGET:
-	Press ENTER to Sync current position with target
-
-PARK
-	PARK SCOPE
-	SET PARK POSITION (may not be needed)
-
-HOME
-	GO HOME
-	SET HOME
-
 SPIRAL SEARCH
 	Press ENTER to start spiral search, press ENTER again to stop
-
-TRACKING
-	SWITCH ON (or SWITCH OFF depending on state)
-	RATE: SIDEREAL
-	RATE: LUNAR
-	RATE: SOLAR
-	REFRACTION COMP: SWITCH ON  (or SWITCH Off depending on state)
-
-ALIGN
-	ALIGN 1-STAR
-	ALIGN 2-STAR
 
 POSITION
 	RA: 00o 11' 12"
@@ -96,30 +54,6 @@ DATE/TIME
 
 MAP LIGHT
 	SWITCH ON (or switch off depending on mode)
-
-ABOUT
-	PiHC Version: 1.0.0a
-	OnStepX Version: 13.2
-	Info: SkyPilot - Wilson Coulee
-	Author: @ChasinSpin
-
-
-Joystick:
-	Center button switches between Joystick and Non-Joystick mode
-	In Joystick mode, N/S/W/E slew and Center button stops and F1/F2 decrease/increase slew speed
-	In Non-Joystick mode, N/S/W/E navigate the menu
-
-	It starts up in non-joystick mode.
-
-	When not in a mode that's an input field:
-
-		N/S/W/E and Center(Stop) 
-
-
-Status display at top:
-
-Mode: Menu or Slew
-SlewSpeed Error Tracking etc.
 
 Target:
 	M57 EX PNEB
@@ -144,17 +78,20 @@ class menuItemSubmenu():
 
 class menuItemAction():
 
-	def __init__(self, name, operation, arg = None):
+	def __init__(self, name, confirmation, operation, arg = None):
 		self.name = name
+		self.confirmation = confirmation
 		self.operation = operation
 		self.arg = arg
 
 
 class menuItemView():
 
-	def __init__(self, name, value):
+	def __init__(self, name, view, arg, update_rate = None):
 		self.name = name
-		self.value = value
+		self.view = view
+		self.arg = arg
+		self.update_rate = update_rate
 
 
 class menu():
@@ -167,20 +104,14 @@ class menu():
 		self.selected_lower	= 0
 		self.selected_upper	= min(len(self.menu), self.MAX_MENU_LINES)
 
+	def __str__(self):
+		return 'menu: selected_index:%d selected_lower:%d selected_upper:%d' % (self.selected_index, self.selected_lower, self.selected_upper)
+
 
 class Menus():
 
-	MODE_DISPLAY_OPERATION		= 0	# Displays an operation; PARKED, PARK_INPROGRESS, GOTO_INPROGRESS, ERROR
-	MODE_MENU			= 1	# Displays the menu
-	MODE_JOYSTICK			= 2	# Displays the joystick
-	MODE_VIEW			= 3	# Displays a view after an action
-
-	DISPLAY_OP_NONE			= 0
-	DISPLAY_OP_PARKED		= 1
-	DISPLAY_OP_PARK_INPROGRESS	= 2
-	DISPLAY_OP_GOTO_INPROGRESS	= 3
-	DISPLAY_OP_3STARALIGN		= 4
-	DISPLAY_OP_ERROR		= 5
+	MODE_NORMAL			= 0	# Normal mode, displays menu or other information
+	MODE_JOYSTICK			= 1	# Takes joystick input
 
 	STATUS_TIMEOUT			= 1.0
 	JOYSTICK_RETRANSMIT_TIMEOUT	= 5.0
@@ -188,9 +119,9 @@ class Menus():
 
 
 	def __init__(self, connection_manager, pyhc_version, info):
-		self.mode		= self.MODE_MENU
-		self.display_op		= self.DISPLAY_OP_NONE
-		self.menu_updated	= False
+		self.mode		= self.MODE_NORMAL
+		self.needs_display	= True
+		self.status_changed	= True
 		self.joystick_mode	= False
 		self.guide_rate		= 9
 		self.conman		= connection_manager
@@ -198,57 +129,56 @@ class Menus():
 		self.info		= info
 
 		self.menu_parking = [
-			menuItemAction('PARK', self.action_park),
-			menuItemAction('UNPARK', self.action_unpark),
+			menuItemAction('PARK', ['PARK command sent'], self.action_park),
+			menuItemAction('UNPARK', ['UNPARK command sent'], self.action_unpark),
 		]
 
-		#self.menu_home = [
-		#	menuItemAction('MOVE HOME', self.action_movehome),
-		#	menuItemAction('SET HOME', self.action_sethome),
-		#]
-
 		self.menu_tracking = [
-			menuItemAction('TRACKING ON', self.action_trackingon),
-			menuItemAction('TRACKING OFF', self.action_trackingoff),
+			menuItemAction('TRACKING ON', ['TRACKING switched ON', '', 'Press any button to continue'], self.action_trackingon),
+			menuItemAction('TRACKING OFF', ['TRACKING switched OFF', '', 'Press any button to continue'], self.action_trackingoff),
 		]
 
 		self.menu_trackingrate = [
-			menuItemAction('SIDEREAL', self.action_trackingrate, 'sidereal'),
-			menuItemAction('LUNAR', self.action_trackingrate, 'lunar'),
-			menuItemAction('KING', self.action_trackingrate, 'king'),
-			menuItemAction('SOLAR', self.action_trackingrate, 'solar'),
+			menuItemAction('SIDEREAL', ['TRACKING set to SIDEREAL', '', 'Press any button to continue'], self.action_trackingrate, 'sidereal'),
+			menuItemAction('LUNAR', ['TRACKING set to LUNAR', '', 'Press any button to continue'], self.action_trackingrate, 'lunar'),
+			menuItemAction('KING', ['TRACKING set to KING', '', 'Press any button to continue'], self.action_trackingrate, 'king'),
+			menuItemAction('SOLAR', ['TRACKING set to SOLAR', '', 'Press any button to continue'], self.action_trackingrate, 'solar'),
 		]
 
 		self.menu_maxslewrate = [
-			menuItemAction('NORMAL (4 deg/s)', self.action_maxslewrate, 'normal'),
-			menuItemAction('COLD WEATHER (2.7 deg/s)', self.action_maxslewrate, 'coldweather'),
-			menuItemAction('SNAIL PACE (2.0 deg/s)', self.action_maxslewrate, 'snailpace'),
-			menuItemAction('INSANE (6.0 deg/s)', self.action_maxslewrate, 'insane'),
+			menuItemAction('NORMAL (4 deg/s)', ['MAX SLEW RATE set to', 'NORMAL(4 deg/s)', '', 'Press any button to continue'], self.action_maxslewrate, 'normal'),
+			menuItemAction('COLD WEATHER (2.7 deg/s)', ['MAX SLEW RATE set to', 'COLD WEATHER (2.7 deg/s)', '', 'Press any button to continue'], self.action_maxslewrate, 'coldweather'),
+			menuItemAction('SNAIL PACE (2.0 deg/s)', ['MAX SLEW RATE set to', 'SNAIL PACE (2.0 deg/s)', '', 'Press any button to continue'], self.action_maxslewrate, 'snailpace'),
+			menuItemAction('INSANE (6.0 deg/s)', ['MAX SLEW RATE set to', 'INSANE (6.0 deg/s)', '', 'Press any button to continue'], self.action_maxslewrate, 'insane'),
 		]
 
 		self.menu_admin = [
-			menuItemAction('SETPARK (do not use)', self.action_setpark),
+			menuItemAction('SETPARK (do not use)', ['CURRENT POSITION IS', 'NOW THE PARK POSITION!', '', 'Press any button to continue'], self.action_setpark),
 		]
 
 		self.main_menu = [
 			menuItemSubmenu('PARKING', self.menu_parking),
-			menuItemAction('SYNC', self.action_sync),
-			menuItemView('POSITION', self.view_position),
+			menuItemAction('SYNC (ALIGN)', ['CURRENT POSITION aligned', 'to CURRENT TARGET', '', 'Press any button to continue'], self.action_sync),
+			menuItemView('POSITION', self.view_position, None, 1),
 			menuItemSubmenu('TRACKING ON/OFF', self.menu_tracking),
 			menuItemSubmenu('TRACKING RATE', self.menu_trackingrate),
 			menuItemSubmenu('MAX SLEW RATE', self.menu_maxslewrate),
-			menuItemAction('3 STAR ALIGN', self.action_3staralign),
-			menuItemAction('ABOUT', self.action_about),
-			menuItemSubmenu('ADMIN ONLY', self.menu_admin),
+			menuItemAction('3 STAR ALIGN', [''], self.action_3staralign),
+			menuItemView('ABOUT', self.view_about, None, None),
+			menuItemSubmenu('SITE MANAGER ONLY', self.menu_admin),
 		]
 
 		self.menu_stack			= []
-		self.current_menu		= menu(self.main_menu)
+		self.top_level_menu		= menu(self.main_menu)
+		self.current_menu		= self.top_level_menu
 
 		self.last_get_status		= time.monotonic()
 		self.last_status = {}
 		self.last_3staralign_time	= time.monotonic()
+		self.last_active_view_update	= time.monotonic()
 
+		self.display_lines = []
+		self.active_view = None
 
 
 	def __get_status(self):
@@ -391,9 +321,11 @@ class Menus():
 				self.status['error'] = rx2	# This can be pulse rate, guide rate or error code, not sure
 
 			if self.last_status != self.status:
-				self.menu_updated = True
+				self.status_changed = True
 				self.last_status = self.status
 				print(self.status)
+			else:
+				self.status_changed = False
 
 
 	def __get_status_shortform(self):
@@ -432,88 +364,6 @@ class Menus():
 		return str
 
 
-	def __check_display_op(self):
-		if self.menu_updated:
-			#if 'error' in self.last_status.keys():
-			#	# Error is always checked for first
-			#	self.mode	= self.MODE_DISPLAY_OPERATION
-			#	self.display_op	= self.DISPLAY_OP_ERROR
-			#	print('ERROR')
-			#	print(self.last_status['error'])
-			if self.last_status['parked'] == 'yes':
-				self.mode	= self.MODE_DISPLAY_OPERATION
-				self.display_op	= self.DISPLAY_OP_PARKED
-			elif self.last_status['parked'] == 'inprogress':
-				self.mode	= self.MODE_DISPLAY_OPERATION
-				self.display_op	= self.DISPLAY_OP_PARK_INPROGRESS
-			elif self.display_op != self.DISPLAY_OP_3STARALIGN and self.last_status['goto'] == 'yes':
-				self.mode	= self.MODE_DISPLAY_OPERATION
-				self.display_op	= self.DISPLAY_OP_GOTO_INPROGRESS
-			elif self.display_op == self.DISPLAY_OP_3STARALIGN:
-				pass
-			else:
-				self.mode = self.MODE_MENU
-				self.display_op = self.DISPLAY_OP_NONE
-
-		if self.mode == self.MODE_DISPLAY_OPERATION and self.display_op == self.DISPLAY_OP_3STARALIGN:
-			now = time.monotonic()
-			if (now - self.last_3staralign_time) >= 1:
-				self.last_3staralign_time = now
-				self.menu_updated = True
-        
-
-	def needs_redisplay(self):
-		""" Returns true if the menu has been updated and needs display """
-		self.__get_status()
-		self.__check_display_op()
-
-		return self.menu_updated
-
-
-	def get_menu_display(self):
-		""" Returns the current menu we need to display """
-		self.menu_updated = False
-
-		lines = []
-
-		if self.mode == self.MODE_DISPLAY_OPERATION and self.display_op == self.DISPLAY_OP_3STARALIGN:
-                	rx = self.conman.send_command('A?', reply_expected = True)
-			starNum = rx[1]
-			if starNum == '4':
-                		self.conman.send_command('AW', reply_expected = True)
-				self.mode = self.MODE_MENU
-				self.display_op = self.DISPLAY_OP_NONE
-			else:
-				lines = ['Align Star %s' % starNum, 'Select star in SkySafari', 'away from NCP and', 'goto and Align']
-
-		print('Mode:', self.mode)
-		print('Display Op:', self.display_op)
-		if self.mode == self.MODE_VIEW or self.mode == self.MODE_JOYSTICK:
-			lines = self.view_msg
-		elif self.mode == self.MODE_DISPLAY_OPERATION:
-			if   self.display_op == self.DISPLAY_OP_PARKED:
-				lines = ['MOUNT IS PARKED!', '', 'Press W button', 'to unpark']
-			elif self.display_op == self.DISPLAY_OP_PARK_INPROGRESS:
-				lines = ['MOVING MOUNT TO PARK POSITION!', '', 'Press ANY button', 'to STOP']
-			elif self.display_op == self.DISPLAY_OP_GOTO_INPROGRESS:
-				lines = ['MOVING MOUNT TO TARGET POSITION!', '', 'Press ANY button', 'to STOP']
-			elif self.display_op == self.DISPLAY_OP_ERROR:
-				lines = ['ERROR']
-			#elif self.display_op == self.DISPLAY_OP_NONE:
-			#	self.mode = self.MODE_MENU
-		else:
-			lines.append(self.__get_status_shortform())
-
-			for i in range(self.current_menu.selected_lower, self.current_menu.selected_upper):
-				if i == self.current_menu.selected_index:
-					cursor = '> '
-				else:
-					cursor = '  '
-				lines.append('%s%s' % (cursor, self.current_menu.menu[i].name))
-
-		return lines
-
-
 	def __process_buttons_joystick(self, buttonsPressed, buttonsReleased, buttonsHeld):
 
 		now = time.monotonic()
@@ -530,7 +380,8 @@ class Menus():
 			if self.guide_rate < 0:
 				self.guide_rate = 0
                 	self.conman.send_command('R%d' % self.guide_rate, reply_expected = False)      # Set guide rate
-			self.__setJoystickView()
+			self.active_view(self.active_view_arg)
+			self.needs_display = True
 
 		if 'F2' in buttonsPressed:
 			""" Increase slew speed """
@@ -538,7 +389,8 @@ class Menus():
 			if self.guide_rate > 9:
 				self.guide_rate = 9
                 	self.conman.send_command('R%d' % self.guide_rate, reply_expected = False)      # Set guide rate
-			self.__setJoystickView()
+			self.active_view(self.active_view_arg)
+			self.needs_display = True
 		
 
 		if 'N' in buttonsPressed or ('N' in buttonsHeld and retransmit_timeout):
@@ -558,152 +410,173 @@ class Menus():
 			self.conman.send_command('Qe', reply_expected = False)
 		if 'W' in buttonsReleased:
 			self.conman.send_command('Qw', reply_expected = False)
-
-
-	def __setJoystickView(self):
-		rates = ['0.25X', '0.5X', '1X', '2X', '4X', '8X', '20X', '48X', '1/2Max', 'Max']
-		self.set_joystick_view( [ 'Joystick Mode', 'Rate: %s' % rates[self.guide_rate] ] )
 			
 
-	def process_buttons(self, buttonsPressed, buttonsReleased, buttonsHeld):
+	def process_menus(self, buttonsPressed, buttonsReleased, buttonsHeld):
 		""" Process button inputs and change menus accordingly """
+		redisplay_menu = False
 
-		if 'C' in buttonsPressed:
-			if self.mode == self.MODE_JOYSTICK:
-				self.mode = self.MODE_MENU
-				self.conman.send_command('Q', reply_expected = False)
-				print('QUIT JOYSTICK MODE')
-			else:
-				self.__setJoystickView()
-				print('JOYSTICK MODE')
-				self.mode = self.MODE_JOYSTICK
-				self.last_joystick_tx = time.monotonic()
-                		self.conman.send_command('R%d' % self.guide_rate, reply_expected = False)      # Set guide rate
+		if 'S' in buttonsPressed:
+			redisplay_menu = True
+			self.current_menu.selected_index += 1
+			if self.current_menu.selected_index >= len(self.current_menu.menu):
+				self.current_menu.selected_index = len(self.current_menu.menu) - 1
+			elif self.current_menu.selected_index >= self.current_menu.selected_upper:
+				self.current_menu.selected_upper += 1
+				self.current_menu.selected_lower += 1
 
-		if self.mode == self.MODE_JOYSTICK:
-			self.__process_buttons_joystick(buttonsPressed, buttonsReleased, buttonsHeld)
-		else:
-			if len(buttonsPressed) == 0:
+		if 'N' in buttonsPressed:
+			redisplay_menu = True
+			self.current_menu.selected_index -= 1
+			if self.current_menu.selected_index < 0:
+				self.current_menu.selected_index = 0
+			elif self.current_menu.selected_index < self.current_menu.selected_lower:
+				self.current_menu.selected_lower -= 1
+				self.current_menu.selected_upper -= 1
+
+		if 'E' in buttonsPressed:
+			redisplay_menu = True
+			if len(self.menu_stack):
+				self.menu_stack.pop()
+				if len(self.menu_stack):
+					self.current_menu = self.menu_stack[-1]
+				else:
+					self.current_menu		= self.top_level_menu
+
+		if 'W' in buttonsPressed:
+			redisplay_menu = True
+			selected = self.current_menu.menu[self.current_menu.selected_index]
+			if isinstance(selected, menuItemSubmenu):
+				self.menu_stack.append(self.current_menu)
+				self.current_menu = menu(selected.submenu)
+			if isinstance(selected, menuItemAction):
+				selected.operation(selected.arg)
+				self.active_view = self.confirmation_view
+				self.active_view_arg = selected.confirmation
+				self.active_view_update_rate = None
+				self.active_view(self.active_view_arg)
+				self.needs_display = True
+				return
+			if isinstance(selected, menuItemView):
+				self.active_view = selected.view
+				self.active_view_arg = selected.arg
+				self.active_view_update_rate = selected.update_rate
+				self.active_view(self.active_view_arg)
+				self.needs_display = True
 				return
 
-			if self.display_op == self.DISPLAY_OP_PARK_INPROGRESS or self.display_op == self.DISPLAY_OP_GOTO_INPROGRESS:
-                		self.conman.send_command('Q', reply_expected = False)	# Stop motion
-				
-			if self.mode == self.MODE_VIEW:
-				self.mode = self.MODE_MENU
-			if self.mode == self.MODE_DISPLAY_OPERATION:
-				if   self.display_op == self.DISPLAY_OP_PARKED:
-					if 'W' in buttonsPressed:
-						self.action_unpark()
-				elif   self.display_op == self.DISPLAY_OP_NONE:
-					self.mode = self.MODE_MENU
-			else:
-				if 'S' in buttonsPressed:
-					self.current_menu.selected_index += 1
-					if self.current_menu.selected_index >= len(self.current_menu.menu):
-						self.current_menu.selected_index = len(self.current_menu.menu) - 1
-					elif self.current_menu.selected_index >= self.current_menu.selected_upper:
-						self.current_menu.selected_upper += 1
-						self.current_menu.selected_lower += 1
+
+		if redisplay_menu or self.needs_display or self.status_changed:
+			self.display_lines = []
+			self.display_lines.append(self.__get_status_shortform())
+
+			for i in range(self.current_menu.selected_lower, self.current_menu.selected_upper):
+				if i == self.current_menu.selected_index:
+					cursor = '> '
+				else:
+					cursor = '  '
+				self.display_lines.append('%s%s' % (cursor, self.current_menu.menu[i].name))
+
+			self.needs_display = True
+
+
+	def process_status(self, buttonsPressed):
+		used = False
+		clearButtons = False
+
+		self.__get_status()
 	
-				if 'N' in buttonsPressed:
-					self.current_menu.selected_index -= 1
-					if self.current_menu.selected_index < 0:
-						self.current_menu.selected_index = 0
-					elif self.current_menu.selected_index < self.current_menu.selected_lower:
-						self.current_menu.selected_lower -= 1
-						self.current_menu.selected_upper -= 1
+		if self.last_status['parked'] == 'yes':
+			used = True
+			self.display_lines = ['MOUNT IS PARKED!', '', 'Press W button to UNPARK']
+			if 'W' in buttonsPressed:
+				self.action_unpark(None)
+				clearButtons = True
+
+		elif self.last_status['parked'] == 'inprogress':
+			used = True
+			self.display_lines = ['MOVING MOUNT TO PARK', 'POSITION!', '', 'Press ANY button to STOP']
+			if len(buttonsPressed):
+				self.conman.send_command('Q', reply_expected = False)	# Stop motion
+
+		elif self.last_status['goto'] == 'yes':
+			used = True
+			self.display_lines = ['MOVING MOUNT TO TARGET', 'POSITION!', '', 'Press ANY button to STOP']
+			if len(buttonsPressed):
+				self.conman.send_command('Q', reply_expected = False)	# Stop motion
+
+		if used or self.status_changed:
+			self.needs_display = True
+			clearButtons = True
+
+		return (used, clearButtons)
+
+
+	def process_views(self, buttonsPressed, buttonsReleased, buttonsHeld):
+		used = False
+		clearButtons = False
+
+		if self.active_view is not None:
+			used = True
+
+			if self.mode == self.MODE_JOYSTICK:
+				self.__process_buttons_joystick(buttonsPressed, buttonsReleased, buttonsHeld)
+
+			elif len(buttonsPressed):
+				clearButtons = True
+
+			if self.active_view_update_rate is not None:
+				now = time.monotonic()
+				if now >= self.last_active_view_update + self.active_view_update_rate:
+					self.active_view(self.active_view_arg)
+					self.needs_display = True
+					self.last_active_view_update = now
+			
+		return (used, clearButtons)
 		
-				if 'E' in buttonsPressed:
-					if len(self.menu_stack):
-						self.menu_stack.pop()
-						if len(self.menu_stack):
-							self.current_menu = self.menu_stack[-1]
-						else:
-							self.current_menu		= menu(self.main_menu)
-				
-	
-				if 'W' in buttonsPressed:
-					selected = self.current_menu.menu[self.current_menu.selected_index]
-					if isinstance(selected, menuItemSubmenu):
-						self.menu_stack.append(self.current_menu)
-						self.current_menu = menu(selected.submenu)
-					if isinstance(selected, menuItemAction):
-						if selected.arg is not None:
-							selected.operation(selected.arg)
-						else:
-							selected.operation()
-					if isinstance(selected, menuItemView):
-						pass
 
-		self.menu_updated = True
-
-
-	def set_view(self, msg):
-		self.mode		= self.MODE_VIEW
-		self.view_msg		= msg
-		self.menu_updated	= True
-
-
-	def set_joystick_view(self, msg):
-		self.view_msg		= msg
-		self.menu_updated	= True
-
-
-	def action_park(self):
+	def action_park(self, arg):
 		self.conman.send_command('hP', reply_expected = True)
-		self.set_view(['Mount is now PARKED!'])
-		print('PARKED')
 
 
-	def action_unpark(self):
+	def action_unpark(self, arg):
 		self.conman.send_command('hR', reply_expected = True)
 		self.conman.send_command('RG', reply_expected = False)
 		self.conman.send_command('R9', reply_expected = False)
-		self.set_view(['Mount is now UNPARKED', 'and Rates Set To Fast!'])
-		print('UNPARKED')
 
 
-	def action_setpark(self):
+	def action_setpark(self, arg):
 		self.conman.send_command('hQ', reply_expected = True)
-		self.set_view(['Mount has had it\'s park position SET'])
-		print('SET PARK')
 
 
-	def action_movehome(self):
+	def action_movehome(self, arg):
 		self.conman.send_command('hC', reply_expected = False)
-		self.set_view(['Mount is moving (finding) HOME'])
-		print('MOVE HOME')
 
 
-	def action_sethome(self):
+	def action_sethome(self, arg):
 		self.conman.send_command('hF', reply_expected = False)
-		self.set_view(['Mount has had it\'s home position SET'])
-		print('SET HOME')
 
 
-	def action_trackingon(self):
+	def action_trackingon(self, arg):
 		self.conman.send_command('Te', reply_expected = True)
-		self.set_view(['Mount has tracking ENABLED'])
-		print('TRACKING ON')
 
 
-	def action_trackingoff(self):
+	def action_trackingoff(self, arg):
 		self.conman.send_command('Td', reply_expected = True)
-		self.set_view(['Mount has tracking DISABLED'])
-		print('TRACKING OFF')
 
 
-	def action_sync(self):
+	def action_sync(self, arg):
 		self.conman.send_command('CS', reply_expected = False)	# This maybe CM, not sure
-		self.set_view(['Synced current position to target!'])
-		print('SYNC')
 
 
-	def action_about(self):
+	def view_about(self, arg):
 		onstepx_ver = self.conman.send_command('GVN', reply_expected = True)
-		self.set_view( ['PiHC Version: %s' % self.pyhc_version, 'OnStepX Version: %s' % onstepx_ver, 'Info: %s' % self.info, 'Author: @ChasinSpin'] )
-		print('ABOUT')
+		self.display_lines = ['PiHC Version: %s' % self.pyhc_version, 'OnStepX Version: %s' % onstepx_ver, 'Info: %s' % self.info, 'Author: @ChasinSpin']
+
+	
+	def view_joystick(self, arg):
+		rates = ['0.25X', '0.5X', '1X', '2X', '4X', '8X', '20X', '48X', '1/2Max', 'Max']
+		self.display_lines = [ 'Joystick Mode', 'Rate: %s' % rates[self.guide_rate] ]
 
 
 	def action_maxslewrate(self, arg):
@@ -717,7 +590,6 @@ class Menus():
 			speed = 3
 
 		self.conman.send_command('SX93,%d' % speed, reply_expected = False)
-		self.set_view(['Max slew speed set'])
 
 
 	def action_trackingrate(self, arg):
@@ -729,22 +601,75 @@ class Menus():
 			self.conman.send_command('TL', reply_expected = False)
 		elif arg == 'king':
 			self.conman.send_command('TK', reply_expected = False)
-		self.set_view(['Tracking rate set'])
 
 
-	def action_3staralign(self):
-		self.mode = self.MODE_DISPLAY_OPERATION
-		self.display_op = self.DISPLAY_OP_3STARALIGN
+	def action_3staralign(self, arg):
 		self.conman.send_command('A3', reply_expected = True)
+		self.active_view = self.view_3staralign
+		self.active_view_arg = None
+		self.active_view_update_rate = 1
 
 	
-	def view_position(self)
-		ra = send_command('GR', reply_expected = True)
-		dec = send_command('GD', reply_expected = True)
-		az = send_command('GZ', reply_expected = True)
-		alt = send_command('GA', reply_expected = True)
-		display.display_position(ra, dec, az, alt)
+	def view_position(self, arg):
+		ra = self.conman.send_command('GR', reply_expected = True)
+		dec = self.conman.send_command('GD', reply_expected = True)
+		az = self.conman.send_command('GZ', reply_expected = True)
+		alt = self.conman.send_command('GA', reply_expected = True)
+		self.display_lines = ['RA:  %s' % ra, 'DEC: %s' % dec, 'AZ:  %s' % az, 'ALT: %s' % alt]
 
 
-	def view_position(self):
-		pass
+	def view_3staralign(self, arg):
+		rx = self.conman.send_command('A?', reply_expected = True)
+		starNum = rx[1]
+		if starNum == '4':
+			self.conman.send_command('AW', reply_expected = True)
+		else:
+			self.display_lines = ['Align Star %s' % starNum, 'Select star in SkySafari', 'away from NCP and', 'goto and Align']
+
+
+	def confirmation_view(self, lines):
+		self.display_lines = lines
+
+
+	def process(self, buttonsPressed, buttonsReleased, buttonsHeld):
+		self.status_changed = False
+		self.needs_display = False
+
+		(used, clearButtons) = self.process_status(buttonsPressed)
+		#print('Used:%d clearButtons %d' % (used, clearButtons))
+		if used and clearButtons:
+			# If we have pressed a button, then we may need to redisplay then menu and remove the buttons from input
+			self.needs_display = True
+			used = False
+			buttonsPressed = []
+		if not used:
+			if 'C' in buttonsPressed:
+				# Toggle Normal/Joystick when center key is pressed
+				if self.mode == self.MODE_JOYSTICK:
+					self.mode = self.MODE_NORMAL
+					buttonsPressed = []
+					self.conman.send_command('Q', reply_expected = False)	# Stop motion
+					self.active_view = None
+					self.active_view_arg = None
+					self.needs_display = True
+				else:
+					self.mode = self.MODE_JOYSTICK
+					buttonsPressed = []
+					self.last_joystick_tx = time.monotonic()
+					self.conman.send_command('R%d' % self.guide_rate, reply_expected = False)      # Set guide rate
+					self.active_view = self.view_joystick
+					self.active_view_arg = None
+					self.active_view_update_rate = 1
+					self.active_view(self.active_view_arg)
+					self.needs_display = True
+
+                	(used, clearButtons) = self.process_views(buttonsPressed, buttonsReleased, buttonsHeld)
+
+			if used and clearButtons:
+				# If we have an active view and a button is pressed, we need to return to displaying the menu and remove the buttons from input
+				self.active_view = None
+				self.needs_display = True
+				used = False
+				buttonsPressed = []
+		if not used:
+                	self.process_menus(buttonsPressed, buttonsReleased, buttonsHeld)

@@ -152,7 +152,7 @@ class ConnectionManager():
 
 				rxBuf = rxBuf[0:rxBytes].decode()
 				if len(rxBuf) == 0:
-					raise ValueError('send_command: received zero bytes')
+					raise ValueError('send_command: received zero bytes for command: %s' % cmd)
 			elif self.con_type == 'st4':
 				pass
 		else:

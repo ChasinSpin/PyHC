@@ -46,11 +46,12 @@ while True:
 	if connection_manager.connected():
 		# Read Buttons
 		(buttonsPressed, buttonsReleased, buttonsHeld) = buttons.process()
-		menus.process_buttons(buttonsPressed, buttonsReleased, buttonsHeld)
 
-		if menus.needs_redisplay():
-			lines = menus.get_menu_display()
-			display.display_menu(lines)
+		menus.process(buttonsPressed, buttonsReleased, buttonsHeld)
+	
+		if menus.needs_display:
+			print(menus.display_lines)
+			display.display_menu(menus.display_lines)
 	else:
  		display.display_connecting(connection_method, onstepx_wifi_ssid)
 		connection_manager.connect()
