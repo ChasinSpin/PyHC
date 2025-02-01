@@ -129,7 +129,7 @@ class Menus():
 		self.info		= info
 
 		self.menu_parking = [
-			menuItemAction('PARK', ['PARK command sent'], self.action_park),
+			menuItemAction('PARK', None, self.action_park),
 			menuItemAction('UNPARK', ['UNPARK command sent'], self.action_unpark),
 		]
 
@@ -163,7 +163,7 @@ class Menus():
 			menuItemSubmenu('TRACKING ON/OFF', self.menu_tracking),
 			menuItemSubmenu('TRACKING RATE', self.menu_trackingrate),
 			menuItemSubmenu('MAX SLEW RATE', self.menu_maxslewrate),
-			menuItemAction('3 STAR ALIGN', [''], self.action_3staralign),
+			#menuItemAction('3 STAR ALIGN', [''], self.action_3staralign),
 			menuItemView('ABOUT', self.view_about, None, None),
 			menuItemSubmenu('SITE MANAGER ONLY', self.menu_admin),
 		]
@@ -176,6 +176,8 @@ class Menus():
 		self.last_status = {}
 		self.last_3staralign_time	= time.monotonic()
 		self.last_active_view_update	= time.monotonic()
+
+		self.periodic_menu_update	= time.monotonic()
 
 		self.display_lines = []
 		self.active_view = None
@@ -416,6 +418,11 @@ class Menus():
 		""" Process button inputs and change menus accordingly """
 		redisplay_menu = False
 
+		now = time.monotonic()
+		if now >= self.periodic_menu_update + 1:
+			self.periodic_menu_update = now
+			redisplay_menu = True
+
 		if 'S' in buttonsPressed:
 			redisplay_menu = True
 			self.current_menu.selected_index += 1
@@ -451,10 +458,11 @@ class Menus():
 				self.current_menu = menu(selected.submenu)
 			if isinstance(selected, menuItemAction):
 				selected.operation(selected.arg)
-				self.active_view = self.confirmation_view
-				self.active_view_arg = selected.confirmation
-				self.active_view_update_rate = None
-				self.active_view(self.active_view_arg)
+				if selected.confirmation is not None:
+					self.active_view = self.confirmation_view
+					self.active_view_arg = selected.confirmation
+					self.active_view_update_rate = None
+					self.active_view(self.active_view_arg)
 				self.needs_display = True
 				return
 			if isinstance(selected, menuItemView):
@@ -482,34 +490,42 @@ class Menus():
 
 	def process_status(self, buttonsPressed):
 		used = False
-		clearButtons = False
+
+		retButtonsPressed = buttonsPressed
 
 		self.__get_status()
 	
-		if self.last_status['parked'] == 'yes':
+		if self.status['parked'] == 'yes':
 			used = True
 			self.display_lines = ['MOUNT IS PARKED!', '', 'Press W button to UNPARK']
 			if 'W' in buttonsPressed:
 				self.action_unpark(None)
-				clearButtons = True
+				retButtonsPressed = []
+				used = False
+				self.display_lines = []
 
-		elif self.last_status['parked'] == 'inprogress':
+		elif self.status['parked'] == 'inprogress':
 			used = True
 			self.display_lines = ['MOVING MOUNT TO PARK', 'POSITION!', '', 'Press ANY button to STOP']
-			if len(buttonsPressed):
+			if len(retButtonsPressed):
 				self.conman.send_command('Q', reply_expected = False)	# Stop motion
+				retButtonsPressed = []
+				used = False
+				self.display_lines = []
 
-		elif self.last_status['goto'] == 'yes':
+		elif self.status['goto'] == 'yes':
 			used = True
 			self.display_lines = ['MOVING MOUNT TO TARGET', 'POSITION!', '', 'Press ANY button to STOP']
-			if len(buttonsPressed):
+			if len(retButtonsPressed):
 				self.conman.send_command('Q', reply_expected = False)	# Stop motion
+				retButtonsPressed = []
+				used = False
+				self.display_lines = []
 
 		if used or self.status_changed:
 			self.needs_display = True
-			clearButtons = True
 
-		return (used, clearButtons)
+		return (used, retButtonsPressed)
 
 
 	def process_views(self, buttonsPressed, buttonsReleased, buttonsHeld):
@@ -635,13 +651,8 @@ class Menus():
 		self.status_changed = False
 		self.needs_display = False
 
-		(used, clearButtons) = self.process_status(buttonsPressed)
-		#print('Used:%d clearButtons %d' % (used, clearButtons))
-		if used and clearButtons:
-			# If we have pressed a button, then we may need to redisplay then menu and remove the buttons from input
-			self.needs_display = True
-			used = False
-			buttonsPressed = []
+		(used, statusButtonsPressed) = self.process_status(buttonsPressed)
+		buttonsPressed = statusButtonsPressed
 		if not used:
 			if 'C' in buttonsPressed:
 				# Toggle Normal/Joystick when center key is pressed
