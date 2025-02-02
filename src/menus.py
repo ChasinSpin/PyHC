@@ -156,11 +156,13 @@ class Menus():
 
 		self.periodic_menu_update	= time.monotonic()
 
-		self.display_lines = []
-		self.active_view = None
-		self.active_view_terminate = None
+		self.display_lines		= []
+		self.active_view		= None
+		self.active_view_terminate	= None
 
-		self.pixel = neopixel.NeoPixel(board.NEOPIXEL, 1)
+		self.pixel			= neopixel.NeoPixel(board.NEOPIXEL, 1)
+
+		self.last_joystick_tx		= time.monotonic()
 
 
 	def __get_status(self):
@@ -296,11 +298,37 @@ class Menus():
 				self.status['pierside'] = 'east'
 			elif 'W' in rx:
 				self.status['pierside'] = 'west'
+	
+			self.status['guideratepulse'] = ord(rx[-3]) - ord('0')
+			self.status['guiderate'] = ord(rx[-2]) - ord('0')
 
-			if '0' in rx:
-				rx2 = rx.lstrip('0')
-				rx2 = rx2[0:2]
-				self.status['error'] = rx2	# This can be pulse rate, guide rate or error code, not sure
+			errStrs = [
+				None,
+				'Motor/driver fault',
+				'Below horizon limit', 
+				'Limit sense',
+				'Dec limit exceeded',
+				'Azm limit exceeded',
+				'Under pole limit exceeded',
+				'Meridian limit exceeded',
+				'Sync safety limit exceeded',
+				'Park failed',
+				'Goto sync failed',
+				'Unknown error',
+				'Above overhead limit',
+				'Weather sensor init failed',
+				'Time or loc. not updated',
+				'Init NV/EEPROM error',
+				'Unknown Error, code: ',
+			]
+
+			errCode = ord(rx[-1]) - ord('0')
+			self.status['error'] = errCode
+
+			if errCode < 0 or errCode >= len(errStrs):
+				self.status['errorStr'] = errStrs[-1] + str(errCode)
+			else:
+				self.status['errorStr'] = errStrs[errCode]
 
 			if self.last_status != self.status:
 				self.status_changed = True
@@ -334,14 +362,17 @@ class Menus():
 		elif self.status['tracking'] == 'no':
 			str += 'off'
 
-		str += ' GPS: '
+		str += ' GPS:'
 		if self.status['pps'] == 'yes':
 			str += 'Y'
 		elif self.status['pps'] == 'no':
 			str += 'N'
 
 		str += ' err:'
-		#str += self.status['error']
+		if self.status['error'] == 0:
+			str += 'N'
+		else:
+			str += self.status['error']
 
 		return str
 
@@ -479,14 +510,20 @@ class Menus():
 			self.needs_display = True
 
 
-	def process_status(self, buttonsPressed):
+	def process_status(self, buttonsPressed, buttonsReleased, buttonsHeld):
 		used = False
 
 		retButtonsPressed = buttonsPressed
 
 		self.__get_status()
 	
-		if self.status['parked'] == 'yes':
+		if self.status['error'] != 0:
+			used = True
+			self.display_lines = ['ERROR:', self.status['errorStr'], '', 'Joystick is enabled!']
+			self.__process_buttons_joystick(retButtonsPressed, buttonsReleased, buttonsHeld)
+			retButtonsPressed = []
+
+		elif self.status['parked'] == 'yes':
 			used = True
 			self.display_lines = ['MOUNT IS PARKED!', '', 'Press W button to UNPARK']
 			if 'W' in buttonsPressed:
@@ -704,7 +741,7 @@ class Menus():
 		self.status_changed = False
 		self.needs_display = False
 
-		(used, statusButtonsPressed) = self.process_status(buttonsPressed)
+		(used, statusButtonsPressed) = self.process_status(buttonsPressed, buttonsReleased, buttonsHeld)
 		buttonsPressed = statusButtonsPressed
 		if not used:
 			if 'C' in buttonsPressed:
