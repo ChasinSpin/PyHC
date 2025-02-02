@@ -7,11 +7,6 @@ Top 10 would be: 3,11,13,16,27,42,53,57,81,92
 
 	self.menu = [
 			menuItemSubmenu('OBJECT LIBRARY', self.menu_objectlibrary)
-			menuItemSubmenu('TARGET', self.menu_target)
-			menuItemSubmenu('SPIRAL SEARCH', self.menu_spiralsearch)
-			menuItemSubmenu('POSITION', self.menu_position)
-			menuItemSubmenu('DATE/TIME', self.menu_datetime)
-			menuItemSubmenu('MAP LIGHT', self.menu_maplight)
 		    ]
 
 	self.menu_objectlibrary =  [
@@ -21,58 +16,30 @@ Top 10 would be: 3,11,13,16,27,42,53,57,81,92
 			menuItemSubmenu('Messier', self.menu_object_library_catMessier)
 		]
 
-	self.menu_target = [
-			menuItemView('Target RA', self.view_targetRa
-		]
-
 	MENUS = [
 		{'name': 'OBJECT LIBRARY', 'view': self.view_object_library, 'menu': None,},	# View object library
-		{'name': 'TARGET', 'view': self.view_target, 'menu': None,},	# View object library
 	]
-
-
-TARGET
-	TARGET RA:
-	TARGET DEC:
-	SET NEW TARGET
-		ENTER RA/DEC
-
-SPIRAL SEARCH
-	Press ENTER to start spiral search, press ENTER again to stop
-
-POSITION
-	RA: 00o 11' 12"
-	DEC: +-00o 11' 12"
-	AZ: 000o 11' 12"
-	ALT: 00o 11' 12"
-
-		
-DATE/TIME
-	DATE: 07/11/91
-	TIME: 00:23:23
-	LTST: 21:38:02
-
-MAP LIGHT
-	SWITCH ON (or switch off depending on mode)
 
 Target:
 	M57 EX PNEB
 	MAG 9.7 SZ 2.5'
-
-
 """
 
 
 import time
+import board
+import neopixel
 from connectionManager import ConnectionManager
+from adafruit_datetime import datetime, timedelta
 
 
 
 class menuItemSubmenu():
 
-	def __init__(self, name, submenu):
+	def __init__(self, name, submenu, site_manager_only):
 		self.name = name
 		self.submenu = submenu
+		self.site_manager_only = site_manager_only
 
 
 
@@ -152,20 +119,30 @@ class Menus():
 			menuItemAction('INSANE (6.0 deg/s)', ['MAX SLEW RATE set to', 'INSANE (6.0 deg/s)', '', 'Press any button to continue'], self.action_maxslewrate, 'insane'),
 		]
 
+		self.menu_maplight = [
+			menuItemAction('MAP LIGHT ON', ['MAP LIGHT switched ON', '', 'Press any button to continue'], self.action_maplighton),
+			menuItemAction('MAP LIGHT OFF', ['MAP LIGHT switched OFF', '', 'Press any button to continue'], self.action_maplightoff),
+		]
+
 		self.menu_admin = [
-			menuItemAction('SETPARK (do not use)', ['CURRENT POSITION IS', 'NOW THE PARK POSITION!', '', 'Press any button to continue'], self.action_setpark),
+			menuItemAction('SETPARK', ['CURRENT POSITION IS', 'NOW THE PARK POSITION!', '', 'Press any button to continue'], self.action_setpark),
+			menuItemAction('3 STAR ALIGN', None, self.action_3staralign),
 		]
 
 		self.main_menu = [
-			menuItemSubmenu('PARKING', self.menu_parking),
+			menuItemSubmenu('PARKING', self.menu_parking, False),
 			menuItemAction('SYNC (ALIGN)', ['CURRENT POSITION aligned', 'to CURRENT TARGET', '', 'Press any button to continue'], self.action_sync),
+			menuItemAction('SPIRAL SEARCH', None, self.action_spiral_search),
 			menuItemView('POSITION', self.view_position, None, 1),
-			menuItemSubmenu('TRACKING ON/OFF', self.menu_tracking),
-			menuItemSubmenu('TRACKING RATE', self.menu_trackingrate),
-			menuItemSubmenu('MAX SLEW RATE', self.menu_maxslewrate),
-			#menuItemAction('3 STAR ALIGN', [''], self.action_3staralign),
+			menuItemSubmenu('TRACKING ON/OFF', self.menu_tracking, False),
+			menuItemSubmenu('TRACKING RATE', self.menu_trackingrate, False),
+			menuItemSubmenu('MAX SLEW RATE', self.menu_maxslewrate, False),
+			menuItemSubmenu('MAP LIGHT', self.menu_maplight, False),
+			menuItemView('DATE/TIME', self.view_date_time, None, 1),
+			menuItemView('SITE', self.view_site, None, None),
+		
 			menuItemView('ABOUT', self.view_about, None, None),
-			menuItemSubmenu('SITE MANAGER ONLY', self.menu_admin),
+			menuItemSubmenu('SITE MANAGER ONLY', self.menu_admin, True),
 		]
 
 		self.menu_stack			= []
@@ -181,6 +158,9 @@ class Menus():
 
 		self.display_lines = []
 		self.active_view = None
+		self.active_view_terminate = None
+
+		self.pixel = neopixel.NeoPixel(board.NEOPIXEL, 1)
 
 
 	def __get_status(self):
@@ -454,21 +434,32 @@ class Menus():
 			redisplay_menu = True
 			selected = self.current_menu.menu[self.current_menu.selected_index]
 			if isinstance(selected, menuItemSubmenu):
-				self.menu_stack.append(self.current_menu)
-				self.current_menu = menu(selected.submenu)
+				visit_menu = False
+				if selected.site_manager_only:
+					if 'F1' in buttonsHeld and 'F2' in buttonsHeld:
+						visit_menu = True
+				else:
+					visit_menu = True
+
+				if visit_menu:
+					self.menu_stack.append(self.current_menu)
+					self.current_menu = menu(selected.submenu)
 			if isinstance(selected, menuItemAction):
 				selected.operation(selected.arg)
 				if selected.confirmation is not None:
-					self.active_view = self.confirmation_view
-					self.active_view_arg = selected.confirmation
-					self.active_view_update_rate = None
-					self.active_view(self.active_view_arg)
+					if self.confirmation_view is not None:
+						self.active_view = self.confirmation_view
+						self.active_view_arg = selected.confirmation
+						self.active_view_update_rate = None
+						self.active_view_terminate = None
+						self.active_view(self.active_view_arg)
 				self.needs_display = True
 				return
 			if isinstance(selected, menuItemView):
 				self.active_view = selected.view
 				self.active_view_arg = selected.arg
 				self.active_view_update_rate = selected.update_rate
+				self.active_view_terminate = None
 				self.active_view(self.active_view_arg)
 				self.needs_display = True
 				return
@@ -540,6 +531,8 @@ class Menus():
 
 			elif len(buttonsPressed):
 				clearButtons = True
+				if self.active_view_terminate is not None:
+					self.active_view_terminate()
 
 			if self.active_view_update_rate is not None:
 				now = time.monotonic()
@@ -556,6 +549,11 @@ class Menus():
 
 
 	def action_unpark(self, arg):
+		self.conman.send_command('Sg+114*01:41', reply_expected = True)	# Set Longitude
+		self.conman.send_command('St+50*46:21', reply_expected = True)	# Set Latitude
+		self.conman.send_command('SG+07:00', reply_expected = True)	# Set UTC Offset (always this offset, even in daylight savings) - THIS POSSIBLY ISN'T WORKING
+		self.conman.send_command('Sh-30', reply_expected = True)	# Set horizon limit
+		self.conman.send_command('So90', reply_expected = True)		# Set overhead limit
 		self.conman.send_command('hR', reply_expected = True)
 		self.conman.send_command('RG', reply_expected = False)
 		self.conman.send_command('R9', reply_expected = False)
@@ -595,6 +593,26 @@ class Menus():
 		self.display_lines = [ 'Joystick Mode', 'Rate: %s' % rates[self.guide_rate] ]
 
 
+	def view_date_time(self, arg):
+		vDate = self.conman.send_command('GC', reply_expected = True)
+		vTime = self.conman.send_command('GL', reply_expected = True)
+		vTimeSidereal = self.conman.send_command('GS', reply_expected = True)
+		vUtcOffset = self.conman.send_command('GG', reply_expected = True)
+
+		year = int(vDate[6:8]) + 2000
+		month = int(vDate[0:2])
+		day = int(vDate[3:5])
+		hour = int(vTime[0:2])
+		min = int(vTime[3:5])
+		sec = int(vTime[6:8])
+
+		offset = int(vUtcOffset[0:3]) * 60 * 60 + int(vUtcOffset[4:6]) * 60
+		dt = datetime(year, month, day, hour, min, sec)
+		delta = timedelta(seconds = offset)
+		dt += delta
+		self.display_lines = ['UTC: %s' % dt, 'Local Sidereal: %s' % vTimeSidereal, '', 'UTC Offset (inverse): %s' % vUtcOffset]
+
+
 	def action_maxslewrate(self, arg):
 		if arg == 'coldweather':
 			speed = 4
@@ -624,6 +642,23 @@ class Menus():
 		self.active_view = self.view_3staralign
 		self.active_view_arg = None
 		self.active_view_update_rate = 1
+		self.active_view_terminate = None
+
+
+	def action_spiral_search(self, arg):
+		self.conman.send_command('Mp', reply_expected = False)
+		self.active_view = self.view_spiral_search
+		self.active_view_arg = None
+		self.active_view_update_rate = 0.1 
+		self.active_view_terminate = self.terminate_spiral_search
+
+
+	def action_maplighton(self, arg):
+		self.pixel.fill( (255, 0, 0) )
+
+
+	def action_maplightoff(self, arg):
+		self.pixel.fill( (0, 0, 0) )
 
 	
 	def view_position(self, arg):
@@ -639,8 +674,26 @@ class Menus():
 		starNum = rx[1]
 		if starNum == '4':
 			self.conman.send_command('AW', reply_expected = True)
+			self.active_view = None
+			self.active_view_arg = None
+			self.active_view_update_rate = None
+			self.active_view_terminate = None
 		else:
 			self.display_lines = ['Align Star %s' % starNum, 'Select star in SkySafari', 'away from NCP and', 'goto and Align']
+
+
+	def view_spiral_search(self, arg):
+		self.display_lines = ['Spiral search in progress,', 'press any button to halt.', 'Change speed with joystick', 'rate prior to search.']
+
+
+	def view_site(self, arg):
+		lat = self.conman.send_command('GtH', reply_expected = True)
+		lon = self.conman.send_command('GgH', reply_expected = True)
+		self.display_lines = ['Latitude: %s' % lat, 'Longitude: %s' % lon]
+
+
+	def terminate_spiral_search(self):
+		self.conman.send_command('Qn', reply_expected = False)
 
 
 	def confirmation_view(self, lines):
@@ -662,6 +715,7 @@ class Menus():
 					self.conman.send_command('Q', reply_expected = False)	# Stop motion
 					self.active_view = None
 					self.active_view_arg = None
+					self.active_view_terminate = None
 					self.needs_display = True
 				else:
 					self.mode = self.MODE_JOYSTICK
@@ -671,6 +725,7 @@ class Menus():
 					self.active_view = self.view_joystick
 					self.active_view_arg = None
 					self.active_view_update_rate = 1
+					self.active_view_terminate = None
 					self.active_view(self.active_view_arg)
 					self.needs_display = True
 
