@@ -23,6 +23,15 @@ Top 10 would be: 3,11,13,16,27,42,53,57,81,92
 Target:
 	M57 EX PNEB
 	MAG 9.7 SZ 2.5'
+
+  #include "src/catalogs/data/stars.h"           // Catalog of 408 bright stars
+  #include "src/catalogs/data/messier.h"         // Charles Messier's famous catalog of 109 DSO's
+  #include "src/catalogs/data/caldwell.h"        // The Caldwell (supplement) catalog of 109 DSO's
+  #include "src/catalogs/data/ngc.h"             // The New General Catalog of 8154 DSO's
+  #include "src/catalogs/data/ic.h"              // The Index Catalog (supplement) of 5400 DSO's
+
+
+
 """
 
 
@@ -516,6 +525,9 @@ class Menus():
 		retButtonsPressed = buttonsPressed
 
 		self.__get_status()
+
+		if self.status is None or self.status == {} or 'error' not in self.status.keys():
+			return (used, retButtonsPressed)
 	
 		if self.status['error'] != 0:
 			used = True
